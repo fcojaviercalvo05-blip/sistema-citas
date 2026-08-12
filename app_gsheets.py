@@ -23,9 +23,7 @@ def get_sheet():
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     
     client = gspread.authorize(creds)
-    # Asegúrate de que el ID de tu hoja sea correcto
-    # También puedes usar client.open("Nombre Exacto De Tu Hoja").sheet1
-    sheet = client.open_by_key("TU_SPREADSHEET_ID_AQUI").sheet1 
+    sheet = client.open_by_key("13yV30-oKjF-G3U0L1Ioxg7q_m1-eThfGisX0sA0R9dE").sheet1  # Tu ID de hoja
     return sheet
 
 @app.route("/", methods=["GET"])
@@ -38,10 +36,17 @@ def guardar_cita():
     try:
         data = request.json
         sheet = get_sheet()
-        records = sheet.get_all_records()
         
-        # Calcular siguiente ID en base a número de filas
-        next_id = len(records) + 1
+        # Obtener todos los valores de la columna A (IDs) para calcular el siguiente ID
+        col_ids = sheet.col_values(1)
+        
+        # Los IDs numéricos empiezan en la fila 5
+        ids_numericos = []
+        for val in col_ids[4:]:  # omitir filas 1, 2, 3 y 4 (encabezados)
+            if val.isdigit():
+                ids_numericos.append(int(val))
+                
+        next_id = max(ids_numericos) + 1 if ids_numericos else 1
         
         nueva_fila = [
             next_id,
@@ -68,22 +73,17 @@ def obtener_cita(cita_id):
     try:
         sheet = get_sheet()
         
-        # Intentar buscar en la primera columna (Columna A - ID)
+        # Buscar en la primera columna (Columna A - ID Cita)
         try:
             cell = sheet.find(str(cita_id), in_column=1)
         except gspread.exceptions.CellNotFound:
-            # Si no lo encuentra en la col 1, intenta buscar en toda la hoja
-            try:
-                cell = sheet.find(str(cita_id))
-            except gspread.exceptions.CellNotFound:
-                cell = None
+            cell = None
 
         if not cell:
             return jsonify({"status": "error", "message": f"No se encontró ninguna cita con el ID '{cita_id}'"}), 404
         
         row_values = sheet.row_values(cell.row)
         
-        # Asegurar que no falle si la fila tiene menos columnas llenas
         def get_val(idx):
             return row_values[idx] if idx < len(row_values) else ""
 
@@ -120,10 +120,7 @@ def actualizar_cita():
         try:
             cell = sheet.find(cita_id, in_column=1)
         except gspread.exceptions.CellNotFound:
-            try:
-                cell = sheet.find(cita_id)
-            except gspread.exceptions.CellNotFound:
-                cell = None
+            cell = None
         
         if not cell:
             return jsonify({"status": "error", "message": f"No se encontró la cita con ID '{cita_id}' para actualizar"}), 404
@@ -143,7 +140,7 @@ def actualizar_cita():
             data.get("observaciones", "")
         ]
         
-        # Actualiza el rango de columnas A a J para esa fila específica
+        # Actualiza el rango A:J en la fila exacta encontrada
         sheet.update(f"A{row_num}:J{row_num}", [fila_actualizada])
         
         return jsonify({"status": "success", "message": f"Cita ID {cita_id} actualizada correctamente"}), 200
