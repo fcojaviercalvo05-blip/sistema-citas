@@ -1,4 +1,5 @@
 import os
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import gspread
@@ -18,13 +19,12 @@ def get_sheet():
     if os.path.exists(CREDENTIALS_PATH):
         creds = Credentials.from_service_account_file(CREDENTIALS_PATH, scopes=SCOPES)
     else:
-        # Fallback si se usa variable de entorno
-        import json
         creds_json = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     
     client = gspread.authorize(creds)
-    # Reemplaza si tu hoja tiene un nombre exacto diferente
+    # Asegúrate de que el ID de tu hoja sea correcto
+    # También puedes usar client.open("Nombre Exacto De Tu Hoja").sheet1
     sheet = client.open_by_key("TU_SPREADSHEET_ID_AQUI").sheet1 
     return sheet
 
@@ -40,7 +40,7 @@ def guardar_cita():
         sheet = get_sheet()
         records = sheet.get_all_records()
         
-        # Calcular siguiente ID
+        # Calcular siguiente ID en base a número de filas
         next_id = len(records) + 1
         
         nueva_fila = [
@@ -59,52 +59,74 @@ def guardar_cita():
         sheet.append_row(nueva_fila)
         return jsonify({"status": "success", "id": next_id}), 200
     except Exception as e:
+        print(f"Error en guardar_cita: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # 2. BUSCAR CITA POR ID
-@app.route("/obtener-cita/<int:cita_id>", methods=["GET"])
+@app.route("/obtener-cita/<cita_id>", methods=["GET"])
 def obtener_cita(cita_id):
     try:
         sheet = get_sheet()
-        cell = sheet.find(str(cita_id), in_column=1)
         
+        # Intentar buscar en la primera columna (Columna A - ID)
+        try:
+            cell = sheet.find(str(cita_id), in_column=1)
+        except gspread.exceptions.CellNotFound:
+            # Si no lo encuentra en la col 1, intenta buscar en toda la hoja
+            try:
+                cell = sheet.find(str(cita_id))
+            except gspread.exceptions.CellNotFound:
+                cell = None
+
         if not cell:
-            return jsonify({"status": "error", "message": f"No se encontró la cita con ID {cita_id}"}), 404
+            return jsonify({"status": "error", "message": f"No se encontró ninguna cita con el ID '{cita_id}'"}), 404
         
         row_values = sheet.row_values(cell.row)
         
+        # Asegurar que no falle si la fila tiene menos columnas llenas
+        def get_val(idx):
+            return row_values[idx] if idx < len(row_values) else ""
+
         cita = {
-            "id": row_values[0] if len(row_values) > 0 else "",
-            "fecha": row_values[1] if len(row_values) > 1 else "",
-            "horario": row_values[2] if len(row_values) > 2 else "",
-            "vendedor": row_values[3] if len(row_values) > 3 else "",
-            "prospecto": row_values[4] if len(row_values) > 4 else "",
-            "telefono": row_values[5] if len(row_values) > 5 else "",
-            "medio": row_values[6] if len(row_values) > 6 else "",
-            "producto": row_values[7] if len(row_values) > 7 else "",
-            "resultado": row_values[8] if len(row_values) > 8 else "",
-            "observaciones": row_values[9] if len(row_values) > 9 else ""
+            "id": get_val(0),
+            "fecha": get_val(1),
+            "horario": get_val(2),
+            "vendedor": get_val(3),
+            "prospecto": get_val(4),
+            "telefono": get_val(5),
+            "medio": get_val(6),
+            "producto": get_val(7),
+            "resultado": get_val(8),
+            "observaciones": get_val(9)
         }
         
         return jsonify({"status": "success", "data": cita}), 200
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        print(f"Error en obtener_cita: {e}")
+        return jsonify({"status": "error", "message": f"Error interno: {str(e)}"}), 500
 
 # 3. ACTUALIZAR CITA EXISTENTE POR ID
 @app.route("/actualizar-cita", methods=["POST"])
 def actualizar_cita():
     try:
         data = request.json
-        cita_id = str(data.get("id"))
+        cita_id = str(data.get("id", "")).strip()
         
         if not cita_id:
-            return jsonify({"status": "error", "message": "ID de cita requerido"}), 400
+            return jsonify({"status": "error", "message": "ID de cita requerido para actualizar"}), 400
             
         sheet = get_sheet()
-        cell = sheet.find(cita_id, in_column=1)
+        
+        try:
+            cell = sheet.find(cita_id, in_column=1)
+        except gspread.exceptions.CellNotFound:
+            try:
+                cell = sheet.find(cita_id)
+            except gspread.exceptions.CellNotFound:
+                cell = None
         
         if not cell:
-            return jsonify({"status": "error", "message": f"No se encontró la cita con ID {cita_id}"}), 404
+            return jsonify({"status": "error", "message": f"No se encontró la cita con ID '{cita_id}' para actualizar"}), 404
             
         row_num = cell.row
         
@@ -121,11 +143,12 @@ def actualizar_cita():
             data.get("observaciones", "")
         ]
         
-        # Actualiza el rango completo de la fila (A:J)
+        # Actualiza el rango de columnas A a J para esa fila específica
         sheet.update(f"A{row_num}:J{row_num}", [fila_actualizada])
         
         return jsonify({"status": "success", "message": f"Cita ID {cita_id} actualizada correctamente"}), 200
     except Exception as e:
+        print(f"Error en actualizar_cita: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
