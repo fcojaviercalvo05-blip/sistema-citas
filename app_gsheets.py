@@ -24,8 +24,8 @@ def get_sheet():
     
     client = gspread.authorize(creds)
     
-    # Abrir directamente por el nombre exacto de tu libro en Google Sheets:
-    sheet = client.open("Control de Citas y Prospectos Diario").sheet1
+    # Abrir la hoja por su nombre completo y seleccionar la pestaña 'Control de Citas'
+    sheet = client.open("Control de Citas y Prospectos Diario").worksheet("Control de Citas")
     return sheet
 
 @app.route("/", methods=["GET"])
