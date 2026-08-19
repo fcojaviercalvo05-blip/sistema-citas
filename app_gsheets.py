@@ -23,7 +23,9 @@ def get_sheet():
         creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
     
     client = gspread.authorize(creds)
-    sheet = client.open_by_key("13yV30-oKjF-G3U0L1Ioxg7q_m1-eThfGisX0sA0R9dE").sheet1  # Tu ID de hoja
+    
+    # Abrir directamente por el nombre exacto de tu libro en Google Sheets:
+    sheet = client.open("Control de Citas y Prospectos Diario").sheet1
     return sheet
 
 @app.route("/", methods=["GET"])
